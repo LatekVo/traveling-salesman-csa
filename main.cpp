@@ -29,11 +29,13 @@ int m_size_x = 512, m_size_y = 512;
 
 // credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 // this is cross product, for determining relative rotation
-float getRotation(node p, node q, node r)
+float getRotation(node &anchorPoint, node &checkedPoint, node &reference)
 {
-	// this should be treated binarly: less, more or equal to 0
-	return  (q.second - p.second) * (r.first- q.first) -
-			(q.first- p.first) * (r.second - q.second);
+	// r < 0 = counter-clockwise
+	// r = 0 = collinear
+	// r > 0 = clockwise
+	return (checkedPoint.second - anchorPoint.second) * (reference.first - checkedPoint.first) -
+		   (checkedPoint.first - anchorPoint.first) * (reference.second - checkedPoint.second);
 }
 
 template<typename rngT>
@@ -67,9 +69,23 @@ nodeList getConvexHull(nodeList &nodeSet) {
 	nodeList resultSet;
 
 	do {
-		 resultSet.push_back(ptr);
+		resultSet.push_back(ptr);
 
+		// reference point for getRot..., anything goes as long as it's not ptr
+		node rotRef = nodeSet.front();
+		if (rotRef == ptr)
+			rotRef = nodeSet.back();
 
+		// find the most counter-clockwise point, change rotRef to that point
+		for (auto &item : nodeSet) {
+
+			if (getRotation(ptr, item, rotRef) < 0) {
+				rotRef = item;
+			}
+
+		}
+
+		ptr = rotRef;
 
 	} while (ptr != resultSet.front());
 
@@ -93,6 +109,7 @@ float distance(node &a, node &b) {
 	return std::sqrt(x*x + y*y);
 }
 
+// beggining with an outer loop, for each iteration find the point that will influence lengthList the least
 nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 	// 0 -> 1 has index 0
 	std::list<float> lengthList; // list as we need to insert values
@@ -111,8 +128,6 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 
 	//manually add the last entry
 	lengthList.push_back(distance(hullSet.back(), hullSet.front()));
-
-
 
 }
 
