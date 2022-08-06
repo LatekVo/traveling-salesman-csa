@@ -1,16 +1,9 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
-#include <SFML/System.hpp>
-#include <SFML/Config.hpp>
 
 #include <array>
 #include <list>
 #include <iostream>
-#include <memory>
-#include <valarray>
-#include <stdexcept>
-#include <deque>
-#include <map>
 #include <random>
 #include <cmath>
 #include <chrono>
@@ -100,7 +93,7 @@ nodeList subtractSet(nodeList mainSet, nodeList &unwantedElements) {
 	return mainSet;
 }
 
-float distance(node &a, node &b) {
+float getDistance(node &a, node &b) {
 	// offset to 0,0
 	float x = b.first - a.first;
 	float y = b.second - a.second;
@@ -115,19 +108,63 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 	std::list<float> lengthList; // list as we need to insert values
 
 	// these are outside to simplify loop below
-	auto it = hullSet.begin();
-	auto last_it = it++;
+	{ // inner localization
+		auto it = hullSet.begin();
+		auto last_it = it++;
 
-	while (it != hullSet.end()) {
+		while (it != hullSet.end()) {
 
-		lengthList.push_back(distance(*last_it, *it));
-		last_it = it;
-		it++;
+			lengthList.push_back(getDistance(*last_it, *it));
+			last_it = it;
+			it++;
 
+		}
 	}
 
 	//manually add the last entry
-	lengthList.push_back(distance(hullSet.back(), hullSet.front()));
+	lengthList.push_back(getDistance(hullSet.back(), hullSet.front()));
+
+	// TODO: implement caching system for getDistance()
+	// tip: group floats for std::map using std::floor()
+
+	do {
+		auto a_it = hullSet.begin();
+		auto b_it = hullSet.begin()++;
+
+		float topDistance = std::numeric_limits<float>::max();
+		auto topDist_iterator = remainingSet.begin();
+
+		// this has an insane time complexity. no_collapses * no_edge_points * no_inner_points * 2;
+		// At 50k points...
+
+		for (; a_it != hullSet.end(); a_it++, b_it++) {
+
+			if (b_it == hullSet.end())
+				b_it = hullSet.begin();
+
+
+			for (auto it = remainingSet.begin(); it != remainingSet.end(); it++) {
+				float check = getDistance(*a_it, *it) + getDistance(*a_it, *it);
+				if (check < topDistance) {
+					topDistance = check;
+					topDist_iterator = it;
+				}
+			}
+
+			//for (auto &innerNode : remainingSet) {}
+
+
+			// TODO: also cache at least one potential closest-distance node here, most of them will never change over time,
+			// and even if they do, only a couple of other known values need to be checked, compared to the whole remainingSet
+		}
+
+		// for lengthList(): remove a -> b connection, establish a -> n -> b
+		// let's say a.i = 5, then a -> n = 5i, n -> b = 6i, n.i = 6, everything beyond n is shifted.
+		// inserting right before the element iterator is pointing to, and it's format is: insert(iterator, value)
+		hullSet.insert(topDist_iterator, *topDist_iterator);
+		remainingSet.remove(*topDist_iterator);
+
+	} while (!remainingSet.empty());
 
 }
 
@@ -145,15 +182,49 @@ int main() {
 
 	nodeList finalSet = calculateDeflate(convexHullSet, remainingSet);
 
-	/*
+
 	sf::RenderWindow window(sf::VideoMode(), "gunmo", sf::Style::Fullscreen);
 	window.setFramerateLimit(144);
 
 	while(window.isOpen()) {
+		// this has to be checked more often, in case exec time gets insane
+		sf::Event event {};
+		while(window.pollEvent(event)) {
+			switch (event.type) {
+				case sf::Event::Closed:
+					window.close();
+					break;
+				case sf::Event::KeyPressed:
+					if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape)) {
+						window.close();
+					}
+					break;
+			}
+		}
 
+		sf::CircleShape ptShape;
+		ptShape.setRadius(15);
+		ptShape.setFillColor(sf::Color::Black);
+
+		for (auto &point : remainingSet) {
+			ptShape.setPosition(point.first, point.second);
+			window.draw(ptShape);
+		}
+
+		sf::VertexArray hullStrip(sf::LineStrip);
+
+		for (auto &point : convexHullSet) {
+			hullStrip.append(sf::Vertex(sf::Vector2f(point.first, point.second)));
+		}
+
+		window.draw(hullStrip);
+
+		window.setView(window.getDefaultView());
+		window.display();
+		window.clear(sf::Color::White);
 
 	}
-	 */
+
 
 	return 0;
 }
