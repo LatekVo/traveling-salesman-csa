@@ -11,8 +11,8 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-int setSize = 16;
-int m_size_x = 512, m_size_y = 512;
+unsigned int setSize = 16;
+unsigned int m_size_x = 512, m_size_y = 512;
 
 // --- --- ---
 // im even attempting this project at the first place, because this algorithm worked every time on paper,
@@ -49,48 +49,44 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 }
 
 // credit: https://www.tutorialspoint.com/Jarvis-March-Algorithm
-nodeList getConvexHull(nodeList &nodeSet) {
-	node ptr = nodeSet.front();
+std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
+	// I had issues with the original code and raw pointers somehow work, so I will go with that
+	node *ptr = &(nodeSet.front());
 
+	// DBG: THIS ONE WORKS
 	for (auto &item : nodeSet) {
 
 		// leftmost node
-		if (item.first < ptr.first) ptr = item;
+		if (item.first < ptr->first) ptr = &item;
 
 	}
 
-	nodeList resultSet;
+	nodeList hullSet {};
+	nodeList interiorSet = nodeSet;
 
 	do {
-		resultSet.push_back(ptr);
+		hullSet.push_back(*ptr);
+		interiorSet.remove(*ptr);
 
 		// reference point for getRot..., anything goes as long as it's not ptr
 		node rotRef = nodeSet.front();
-		if (rotRef == ptr)
+		if (rotRef == *ptr)
 			rotRef = nodeSet.back();
 
 		// find the most counter-clockwise point, change rotRef to that point
 		for (auto &item : nodeSet) {
 
-			if (getRotation(ptr, item, rotRef) < 0) {
+			if (getRotation(*ptr, item, rotRef) < 0) {
 				rotRef = item;
 			}
 
 		}
 
-		ptr = rotRef;
+		ptr = &rotRef;
 
-	} while (ptr != resultSet.front());
+	} while (*ptr != hullSet.front());
 
-}
-
-nodeList subtractSet(nodeList mainSet, nodeList &unwantedElements) {
-
-	for (auto &item : unwantedElements) {
-		mainSet.remove(item);
-	}
-
-	return mainSet;
+	return {hullSet, nodeSet};
 }
 
 float getDistance(node &a, node &b) {
@@ -170,23 +166,64 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 
 int main() {
 
-	int min = m_size_x < m_size_y ? std::ceil((float)m_size_x * 0.05) : std::ceil((float)m_size_y * 0.05);
-	int max = m_size_x < m_size_y ? std::floor((float)m_size_x * 0.95) : std::floor((float)m_size_y * 0.95);
+	sf::RenderWindow window(sf::VideoMode(), "tsp", sf::Style::Fullscreen);
+	m_size_x = window.getSize().x;
+	m_size_y = window.getSize().y;
+
+	int min = m_size_x < m_size_y ? std::floor((float)m_size_x * 0.05) : std::floor((float)m_size_y * 0.05);
+	int max = m_size_x < m_size_y ? std::ceil((float)m_size_x * 0.95) : std::ceil((float)m_size_y * 0.95);
 
 	std::default_random_engine rng(std::chrono::system_clock::now().time_since_epoch().count());
 
 	nodeList initialSet = getRandomSet(setSize, min, max, rng);
 
-	nodeList convexHullSet = getConvexHull(initialSet);
-	nodeList remainingSet = subtractSet(initialSet, convexHullSet);
+	auto sets = getConvexHull(initialSet);
+	nodeList convexHullSet = sets.first;
+	nodeList remainingSet = sets.second;
 
 	nodeList finalSet = calculateDeflate(convexHullSet, remainingSet);
 
+	std::cout 	<< initialSet.size() << "\n"
+				<< convexHullSet.size() << "\n"
+				<< remainingSet.size() << "\n" // ERR
+				<< finalSet.size() << "\n"; // ERR
 
-	sf::RenderWindow window(sf::VideoMode(), "gunmo", sf::Style::Fullscreen);
+	// DRAWING
+
+	window.setView(window.getDefaultView());
 	window.setFramerateLimit(144);
+	auto camera = sf::View( sf::FloatRect(0, 0, (float)window.getSize().x, (float)window.getSize().y));
+	window.setView(camera);
+	window.clear(sf::Color::White);
+
+
+	sf::CircleShape ptShape;
+	ptShape.setRadius(15);
+	ptShape.setFillColor(sf::Color::Black);
+
+	for (auto &point : remainingSet) {
+		ptShape.setPosition(point.first, point.second);
+		window.draw(ptShape);
+		std::cout << "drawing point\n";
+	}
+
+	sf::VertexArray hullStrip(sf::LineStrip);
+
+	for (auto &point : convexHullSet) {
+		hullStrip.append(sf::Vertex(sf::Vector2f(point.first, point.second)));
+	}
+
+	window.draw(hullStrip);
+
+	window.display();
+
+	sf::Clock g_delta;
+	float g_currentFrameAdjustment = 0.f;
+	sf::Vector2f position {0, 0};
 
 	while(window.isOpen()) {
+		window.clear(sf::Color::White);
+
 		// this has to be checked more often, in case exec time gets insane
 		sf::Event event {};
 		while(window.pollEvent(event)) {
@@ -202,26 +239,32 @@ int main() {
 			}
 		}
 
-		sf::CircleShape ptShape;
-		ptShape.setRadius(15);
-		ptShape.setFillColor(sf::Color::Black);
+		float mov = 2 * g_currentFrameAdjustment * 1000;
+		float xMov = 0;
+		float yMov = 0;
 
-		for (auto &point : remainingSet) {
-			ptShape.setPosition(point.first, point.second);
-			window.draw(ptShape);
+		g_currentFrameAdjustment = g_delta.getElapsedTime().asSeconds();
+		g_delta.restart();
+
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W))
+			yMov -= mov;
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S))
+			yMov += mov;
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A))
+			xMov -= mov;
+		if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D))
+			xMov += mov;
+
+		if (xMov != 0 && yMov != 0) {
+			// 707 = sin 45deg = cos 45deg
+			xMov *= .707;
+			yMov *= .707;
 		}
 
-		sf::VertexArray hullStrip(sf::LineStrip);
+		position.x += xMov;
+		position.y += yMov;
 
-		for (auto &point : convexHullSet) {
-			hullStrip.append(sf::Vertex(sf::Vector2f(point.first, point.second)));
-		}
-
-		window.draw(hullStrip);
-
-		window.setView(window.getDefaultView());
 		window.display();
-		window.clear(sf::Color::White);
 
 	}
 
