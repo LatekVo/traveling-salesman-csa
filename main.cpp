@@ -20,6 +20,8 @@ unsigned int m_size_x = 512, m_size_y = 512;
 // perfectly, as this problem is thought to be O(n^2) at best
 // --- --- ---
 
+// TODO: leaking around 2 bytes each launch, not preferrable
+
 // credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 // this is cross product, for determining relative rotation
 float getRotation(node &anchorPoint, node &checkedPoint, node &reference)
@@ -49,42 +51,59 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 }
 
 // credit: https://www.tutorialspoint.com/Jarvis-March-Algorithm
-std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
-	// I had issues with the original code and raw pointers somehow work, so I will go with that
-	node *ptr = &(nodeSet.front());
+std::pair<nodeList, nodeList> getConvexHull(nodeList nodeSet) {
+
+	// TODO: redundant, remove
+	// original algo only uses leftmost
+	// im usign topmost as well as it will always work as an anchor (vec_B) and it works ok
+	node leftmost = nodeSet.front();
+	node topmost = nodeSet.front();
 
 	// DBG: THIS ONE WORKS
 	for (auto &item : nodeSet) {
 
 		// leftmost node
-		if (item.first < ptr->first) ptr = &item;
+		if (item.first < leftmost.first) leftmost = item;
+
+		std::cout << item.first << "\n";
+
+	}
+	for (auto &item : nodeSet) {
+
+		// leftmost node
+		if (item.second > leftmost.second) topmost = item;
+
+		std::cout << item.first << "\n";
 
 	}
 
 	nodeList hullSet {};
 	nodeList interiorSet = nodeSet;
 
+	auto candidate = leftmost;
+	auto anchorPoint = leftmost;
+	auto productReference = topmost;
+
 	do {
-		hullSet.push_back(*ptr);
-		interiorSet.remove(*ptr);
+		std::cout << "jarvis loop ";
+		hullSet.push_back(candidate);
+		interiorSet.remove(candidate);
 
-		// reference point for getRot..., anything goes as long as it's not ptr
-		node rotRef = nodeSet.front();
-		if (rotRef == *ptr)
-			rotRef = nodeSet.back();
+		float maxCounterclockwise = 1.f;
+		anchorPoint = productReference;
+		productReference = candidate;
 
-		// find the most counter-clockwise point, change rotRef to that point
-		for (auto &item : nodeSet) {
-
-			if (getRotation(*ptr, item, rotRef) < 0) {
-				rotRef = item;
+		for (auto &randomItem : nodeSet) {
+			float rot = getRotation(anchorPoint, randomItem, productReference);
+			if (rot < maxCounterclockwise) {
+				maxCounterclockwise = rot;
+				candidate = randomItem;
 			}
-
 		}
 
-		ptr = &rotRef;
+		std::cout << "candidate: " << candidate.first << " " << candidate.second << "\n";
 
-	} while (*ptr != hullSet.front());
+	} while (candidate != leftmost);
 
 	return {hullSet, nodeSet};
 }
@@ -124,8 +143,11 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 	// tip: group floats for std::map using std::floor()
 
 	do {
+		std::cout << "probing misshap: " << remainingSet.size() << "\n";
+
 		auto a_it = hullSet.begin();
-		auto b_it = hullSet.begin()++;
+		auto b_it = hullSet.begin();
+		b_it++;
 
 		float topDistance = std::numeric_limits<float>::max();
 		auto topDist_iterator = remainingSet.begin();
@@ -138,10 +160,13 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 			if (b_it == hullSet.end())
 				b_it = hullSet.begin();
 
+			std::cout << "iterators: ax: " << a_it->first << " ay: " << a_it->second << " bx " << b_it->first << " by: " << b_it->second << "\n";
 
 			for (auto it = remainingSet.begin(); it != remainingSet.end(); it++) {
-				float check = getDistance(*a_it, *it) + getDistance(*a_it, *it);
+				float check = getDistance(*a_it, *it) + getDistance(*b_it, *it);
 				if (check < topDistance) {
+					std::cout << "new top distance found: " << topDistance << " -> " << check << "\n";
+
 					topDistance = check;
 					topDist_iterator = it;
 				}
@@ -158,9 +183,10 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 		// let's say a.i = 5, then a -> n = 5i, n -> b = 6i, n.i = 6, everything beyond n is shifted.
 		// inserting right before the element iterator is pointing to, and it's format is: insert(iterator, value)
 		hullSet.insert(topDist_iterator, *topDist_iterator);
-		remainingSet.remove(*topDist_iterator);
+ 		remainingSet.remove(*topDist_iterator);
 
-	} while (!remainingSet.empty());
+		 // !.empty() doesn't work, != 0 does, whyy?
+	} while (remainingSet.size() != 0);
 
 }
 
@@ -179,14 +205,14 @@ int main() {
 
 	auto sets = getConvexHull(initialSet);
 	nodeList convexHullSet = sets.first;
-	nodeList remainingSet = sets.second;
+	nodeList remainingSet = sets.second; // this is fine
 
 	nodeList finalSet = calculateDeflate(convexHullSet, remainingSet);
 
-	std::cout 	<< initialSet.size() << "\n"
-				<< convexHullSet.size() << "\n"
-				<< remainingSet.size() << "\n" // ERR
-				<< finalSet.size() << "\n"; // ERR
+	std::cout 	<< "init: " << initialSet.size() << "\n"
+				<< "hull: " << convexHullSet.size() << "\n"
+				<< "inner: " << remainingSet.size() << "\n" // ERR
+				<< "final: " << finalSet.size() << "\n"; // ERR
 
 	// DRAWING
 
@@ -198,7 +224,7 @@ int main() {
 
 
 	sf::CircleShape ptShape;
-	ptShape.setRadius(15);
+	ptShape.setRadius(3);
 	ptShape.setFillColor(sf::Color::Black);
 
 	for (auto &point : remainingSet) {
@@ -210,7 +236,10 @@ int main() {
 	sf::VertexArray hullStrip(sf::LineStrip);
 
 	for (auto &point : convexHullSet) {
-		hullStrip.append(sf::Vertex(sf::Vector2f(point.first, point.second)));
+		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
+		v.color = sf::Color::Blue;
+		hullStrip.append(v);
+		std::cout << "drawing line segment\n";
 	}
 
 	window.draw(hullStrip);
@@ -222,7 +251,7 @@ int main() {
 	sf::Vector2f position {0, 0};
 
 	while(window.isOpen()) {
-		window.clear(sf::Color::White);
+		//window.clear(sf::Color::White);
 
 		// this has to be checked more often, in case exec time gets insane
 		sf::Event event {};
@@ -263,6 +292,8 @@ int main() {
 
 		position.x += xMov;
 		position.y += yMov;
+
+		camera.setCenter(position);
 
 		window.display();
 
