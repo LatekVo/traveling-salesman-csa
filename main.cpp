@@ -21,16 +21,18 @@ unsigned int m_size_x = 512, m_size_y = 512;
 // --- --- ---
 
 // TODO: leaking around 2 bytes each launch, not preferrable
+// (brought back to 1 byte, somehow)
 
 // credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 // this is cross product, for determining relative rotation
-float getRotation(node &anchorPoint, node &checkedPoint, node &reference)
+float getRotation(node &anchorPoint, node &checkedPoint, node &referenceVector)
 {
 	// r < 0 = counter-clockwise
 	// r = 0 = collinear
 	// r > 0 = clockwise
-	return (checkedPoint.second - anchorPoint.second) * (reference.first - checkedPoint.first) -
-		   (checkedPoint.first - anchorPoint.first) * (reference.second - checkedPoint.second);
+	// highet values at 90deg,
+	return (checkedPoint.second - anchorPoint.second) * (referenceVector.first - checkedPoint.first) -
+		   (checkedPoint.first - anchorPoint.first) * (referenceVector.second - checkedPoint.second);
 }
 
 template<typename rngT>
@@ -50,8 +52,8 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 	return resultSet;
 }
 
-// credit: https://www.tutorialspoint.com/Jarvis-March-Algorithm
-std::pair<nodeList, nodeList> getConvexHull(nodeList nodeSet) {
+// credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
+std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 
 	// TODO: redundant, remove
 	// original algo only uses leftmost
@@ -60,6 +62,7 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList nodeSet) {
 	node topmost = nodeSet.front();
 
 	// DBG: THIS ONE WORKS
+	std::cout << "probing leftmost point\n";
 	for (auto &item : nodeSet) {
 
 		// leftmost node
@@ -68,44 +71,46 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList nodeSet) {
 		std::cout << item.first << "\n";
 
 	}
+	std::cout << "probing topmost point\n";
 	for (auto &item : nodeSet) {
 
-		// leftmost node
+		// topmost node
 		if (item.second > leftmost.second) topmost = item;
 
-		std::cout << item.first << "\n";
+		std::cout << item.second << "\n";
 
 	}
 
 	nodeList hullSet {};
 	nodeList interiorSet = nodeSet;
 
-	auto candidate = leftmost;
+	auto checkedVec = leftmost;
 	auto anchorPoint = leftmost;
-	auto productReference = topmost;
+	auto referenceVec = topmost;
 
+	std::cout << "jarvis loop\n";
 	do {
-		std::cout << "jarvis loop ";
-		hullSet.push_back(candidate);
-		interiorSet.remove(candidate);
+		hullSet.push_back(checkedVec);
+		interiorSet.remove(checkedVec);
 
-		float maxCounterclockwise = 1.f;
-		anchorPoint = productReference;
-		productReference = candidate;
+		anchorPoint = checkedVec; // anchor to last match
+		checkedVec = referenceVec; // prepare new vector for matching, such that getRot = 0
 
 		for (auto &randomItem : nodeSet) {
-			float rot = getRotation(anchorPoint, randomItem, productReference);
-			if (rot < maxCounterclockwise) {
-				maxCounterclockwise = rot;
-				candidate = randomItem;
+			float rot = getRotation(anchorPoint, randomItem, referenceVec);
+			if (rot < 0) {
+				referenceVec = randomItem;
 			}
 		}
 
-		std::cout << "candidate: " << candidate.first << " " << candidate.second << "\n";
+		checkedVec = referenceVec; // lock the matching vector, save it as checkedVec
+		referenceVec = anchorPoint; // and finally move back the ref to rightmost position, (from next ref's perspective)
 
-	} while (candidate != leftmost);
+	} while (checkedVec != leftmost);
 
-	return {hullSet, nodeSet};
+	hullSet.push_back(leftmost);
+
+	return {hullSet, interiorSet};
 }
 
 float getDistance(node &a, node &b) {
@@ -118,7 +123,8 @@ float getDistance(node &a, node &b) {
 }
 
 // beggining with an outer loop, for each iteration find the point that will influence lengthList the least
-nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
+nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
+	std::cout << "starting to deflate\n";
 	// 0 -> 1 has index 0
 	std::list<float> lengthList; // list as we need to insert values
 
@@ -188,6 +194,7 @@ nodeList calculateDeflate(nodeList &hullSet, nodeList &remainingSet) {
 		 // !.empty() doesn't work, != 0 does, whyy?
 	} while (remainingSet.size() != 0);
 
+	return hullSet;
 }
 
 int main() {
@@ -227,22 +234,32 @@ int main() {
 	ptShape.setRadius(3);
 	ptShape.setFillColor(sf::Color::Black);
 
+	std::cout << "drawing points" << std::endl;
 	for (auto &point : remainingSet) {
 		ptShape.setPosition(point.first, point.second);
 		window.draw(ptShape);
-		std::cout << "drawing point\n";
 	}
 
 	sf::VertexArray hullStrip(sf::LineStrip);
 
+	std::cout << "drawing hull line segment" << std::endl;
 	for (auto &point : convexHullSet) {
 		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
 		v.color = sf::Color::Blue;
 		hullStrip.append(v);
-		std::cout << "drawing line segment\n";
+	}
+
+	sf::VertexArray finalStrip(sf::LineStrip);
+
+	std::cout << "drawing final line segment" << std::endl;
+	for (auto &point : finalSet) {
+		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
+		v.color = sf::Color::Blue;
+		finalStrip.append(v);
 	}
 
 	window.draw(hullStrip);
+	window.draw(finalStrip);
 
 	window.display();
 
