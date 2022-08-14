@@ -11,7 +11,7 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-unsigned int setSize = 8;
+unsigned int setSize = 86;
 unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 
 // --- --- ---
@@ -163,7 +163,7 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 			// ... check every unused point
 			for (auto &c_it : remainingSet) {
 
-				float check = getDistance(*a_it, c_it) + getDistance(*b_it, c_it);
+				float check = getDistance(*a_it, c_it) + getDistance(*b_it, c_it) - getDistance(*a_it, *b_it);
 
 				if (check < topDist_val) {
 					std::cout << "new top distance found: " << topDist_val << " -> " << check << "\n";
