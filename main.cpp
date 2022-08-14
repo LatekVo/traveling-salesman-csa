@@ -11,8 +11,8 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-unsigned int setSize = 16;
-unsigned int m_size_x = 512, m_size_y = 512;
+unsigned int setSize = 8;
+unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 
 // --- --- ---
 // im even attempting this project at the first place, because this algorithm worked every time on paper,
@@ -41,10 +41,9 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 
 	for (int i = 0; i < size; i++) {
 		resultSet.push_back(
-				// note that this is awfully inefficient, just quick to write
 					{
-						((rng() - rng.min()) / (float) rng.max()) * max + min,
-						((rng() - rng.min()) / (float) rng.max()) * max + min
+						std::abs((float) rng()) / rng.max() * (max - min * 2) + min,
+						std::abs((float) rng()) / rng.max() * (max - min * 2) + min
 					}
 				);
 	}
@@ -52,16 +51,15 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 	return resultSet;
 }
 
-// credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
+// reference: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 
 	// TODO: redundant, remove
 	// original algo only uses leftmost
-	// im usign topmost as well as it will always work as an anchor (vec_B) and it works ok
+	// im using topmost as well as it's a good starting point for the first reference vector
 	node leftmost = nodeSet.front();
 	node topmost = nodeSet.front();
 
-	// DBG: THIS ONE WORKS
 	std::cout << "probing leftmost point\n";
 	for (auto &item : nodeSet) {
 
@@ -108,8 +106,10 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 
 	} while (checkedVec != leftmost);
 
+	// intentionally adding overlap, it needs to be added everywhere else anyways
 	hullSet.push_back(leftmost);
 
+	// DBG: both sets are set correctly
 	return {hullSet, interiorSet};
 }
 
@@ -128,71 +128,65 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	// 0 -> 1 has index 0
 	std::list<float> lengthList; // list as we need to insert values
 
-	// these are outside to simplify loop below
-	{ // inner localization
-		auto it = hullSet.begin();
-		auto last_it = it++;
+	auto it = hullSet.begin();
+	auto last_it = it;
+	it++;
 
-		while (it != hullSet.end()) {
-
-			lengthList.push_back(getDistance(*last_it, *it));
-			last_it = it;
-			it++;
-
-		}
-	}
-
-	//manually add the last entry
-	lengthList.push_back(getDistance(hullSet.back(), hullSet.front()));
+	// generating distances for the lengthList
+	do {
+		lengthList.push_back(getDistance(*last_it, *it));
+		last_it++, it++;
+	} while (it != hullSet.end());
 
 	// TODO: implement caching system for getDistance()
-	// tip: group floats for std::map using std::floor()
+	// tip: maybe group floats using std::floor to use std::map as storage?
 
 	do {
-		std::cout << "probing misshap: " << remainingSet.size() << "\n";
-
 		auto a_it = hullSet.begin();
 		auto b_it = hullSet.begin();
 		b_it++;
 
-		float topDistance = std::numeric_limits<float>::max();
-		auto topDist_iterator = remainingSet.begin();
+		// this has an insane time complexity. collapses * edge_points * inner_points * 2;
+		// At 50k points... that'll probably run for a couple of hours, or days
 
-		// this has an insane time complexity. no_collapses * no_edge_points * no_inner_points * 2;
-		// At 50k points...
+		int topDist_pos = 0;
+		float topDist_val = std::numeric_limits<float>::max();
+		auto topDist_node = remainingSet.front();
 
-		for (; a_it != hullSet.end(); a_it++, b_it++) {
+		// THIS IS A POINTER TO REMAININGSET, WHY WOULD I USE IT IN HULLSET!???
+		// auto topDist_it = remainingSet.begin();
 
-			if (b_it == hullSet.end())
-				b_it = hullSet.begin();
+		// for every hull line ...
+		int position = 1;
+		while (b_it != hullSet.end()) {
 
-			std::cout << "iterators: ax: " << a_it->first << " ay: " << a_it->second << " bx " << b_it->first << " by: " << b_it->second << "\n";
+			// ... check every unused point
+			for (auto &c_it : remainingSet) {
 
-			for (auto it = remainingSet.begin(); it != remainingSet.end(); it++) {
-				float check = getDistance(*a_it, *it) + getDistance(*b_it, *it);
-				if (check < topDistance) {
-					std::cout << "new top distance found: " << topDistance << " -> " << check << "\n";
+				float check = getDistance(*a_it, c_it) + getDistance(*b_it, c_it);
 
-					topDistance = check;
-					topDist_iterator = it;
+				if (check < topDist_val) {
+					std::cout << "new top distance found: " << topDist_val << " -> " << check << "\n";
+
+					topDist_val = check;
+					topDist_node = c_it;
+					topDist_pos = position;
 				}
+
 			}
-
-			//for (auto &innerNode : remainingSet) {}
-
-
-			// TODO: also cache at least one potential closest-distance node here, most of them will never change over time,
-			// and even if they do, only a couple of other known values need to be checked, compared to the whole remainingSet
+			a_it++, b_it++, position++;
 		}
 
-		// for lengthList(): remove a -> b connection, establish a -> n -> b
-		// let's say a.i = 5, then a -> n = 5i, n -> b = 6i, n.i = 6, everything beyond n is shifted.
-		// inserting right before the element iterator is pointing to, and it's format is: insert(iterator, value)
-		hullSet.insert(topDist_iterator, *topDist_iterator);
- 		remainingSet.remove(*topDist_iterator);
+		// summary: find the smallest distance difference, new hull now includes that point, repeat
 
-		 // !.empty() doesn't work, != 0 does, whyy?
-	} while (remainingSet.size() != 0);
+		auto insertIter = hullSet.begin();
+		for (auto i = 0; i < topDist_pos; i++)
+			insertIter++;
+
+		hullSet.insert(insertIter, topDist_node);
+ 		remainingSet.remove(topDist_node);
+
+	} while (!remainingSet.empty());
 
 	return hullSet;
 }
@@ -214,12 +208,13 @@ int main() {
 	nodeList convexHullSet = sets.first;
 	nodeList remainingSet = sets.second; // this is fine
 
+	// ERR: final set draws over hull set over and over again until the initialSet's size is reached
 	nodeList finalSet = calculateDeflate(convexHullSet, remainingSet);
 
 	std::cout 	<< "init: " << initialSet.size() << "\n"
 				<< "hull: " << convexHullSet.size() << "\n"
-				<< "inner: " << remainingSet.size() << "\n" // ERR
-				<< "final: " << finalSet.size() << "\n"; // ERR
+				<< "inner: " << remainingSet.size() << "\n"
+				<< "final: " << finalSet.size() << "\n";
 
 	// DRAWING
 
@@ -235,8 +230,8 @@ int main() {
 	ptShape.setFillColor(sf::Color::Black);
 
 	std::cout << "drawing points" << std::endl;
-	for (auto &point : remainingSet) {
-		ptShape.setPosition(point.first, point.second);
+	for (auto &point : initialSet) {
+		ptShape.setPosition(point.first - ptShape.getRadius(), point.second - ptShape.getRadius());
 		window.draw(ptShape);
 	}
 
@@ -254,7 +249,7 @@ int main() {
 	std::cout << "drawing final line segment" << std::endl;
 	for (auto &point : finalSet) {
 		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
-		v.color = sf::Color::Blue;
+		v.color = sf::Color::Red;
 		finalStrip.append(v);
 	}
 
@@ -315,7 +310,6 @@ int main() {
 		window.display();
 
 	}
-
 
 	return 0;
 }
