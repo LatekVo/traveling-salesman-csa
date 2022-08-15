@@ -1,6 +1,8 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 
+#include <fstream>
+#include <string>
 #include <array>
 #include <list>
 #include <iostream>
@@ -11,7 +13,7 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-unsigned int setSize = 86;
+unsigned int setSize = 120;
 unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 
 // --- --- ---
@@ -35,6 +37,19 @@ float getRotation(node &anchorPoint, node &checkedPoint, node &referenceVector)
 		   (checkedPoint.first - anchorPoint.first) * (referenceVector.second - checkedPoint.second);
 }
 
+nodeList loadFromFile(std::string &filename) {
+	nodeList resultSet;
+	std::ifstream file;
+	file.open(filename);
+	std::string buffer;
+	std::getline(file, buffer);
+
+	
+
+
+	return resultSet;
+}
+
 template<typename rngT>
 nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 	nodeList resultSet;
@@ -47,6 +62,8 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 					}
 				);
 	}
+
+	resultSet.unique();
 
 	return resultSet;
 }
@@ -141,7 +158,10 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	// TODO: implement caching system for getDistance()
 	// tip: maybe group floats using std::floor to use std::map as storage?
 
+	unsigned int calcNumber = 1;
 	do {
+		std::cout << "stage 1, computed #: " << calcNumber << " / " << setSize << "\n";
+		calcNumber++;
 		auto a_it = hullSet.begin();
 		auto b_it = hullSet.begin();
 		b_it++;
@@ -166,7 +186,7 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 				float check = getDistance(*a_it, c_it) + getDistance(*b_it, c_it) - getDistance(*a_it, *b_it);
 
 				if (check < topDist_val) {
-					std::cout << "new top distance found: " << topDist_val << " -> " << check << "\n";
+					// std::cout << "new top distance found: " << topDist_val << " -> " << check << "\n";
 
 					topDist_val = check;
 					topDist_node = c_it;
@@ -191,6 +211,64 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	return hullSet;
 }
 
+// another n^2 operation
+// switch every pair of vectors that's crossing eachother
+nodeList untangle(nodeList rawSet) {
+
+	// basic general 2-opt algorithm, working for any two lines, not only the crossed ones
+
+	unsigned int calcNumber = 1;
+	unsigned int cycle = 1;
+	bool isImproved = false;
+
+	do {
+		isImproved = false;
+		calcNumber = 1;
+
+		auto node_a1 = rawSet.begin();
+		auto node_a2 = rawSet.begin();
+		node_a2++;
+
+		do {
+			std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
+			auto node_b1 = rawSet.begin();
+			auto node_b2 = rawSet.begin();
+			node_b2++;
+
+			do {
+				float dist_a1_a2 = getDistance(*node_a1, *node_a2);
+				float dist_b1_b2 = getDistance(*node_b1, *node_b2);
+
+				float dist_a1_b1 = getDistance(*node_a1, *node_b1);
+				float dist_a2_b2 = getDistance(*node_a2, *node_b2);
+
+				// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
+
+				if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+
+					// the desirable fragment is essentially a sub list. std::list has a reversing option.
+					// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
+
+					auto b1_next = node_b1;
+					b1_next++;
+					std::reverse(node_a2, b1_next);
+
+					isImproved = true;
+				}
+
+				node_b1++,
+				node_b2++;
+			} while (node_b2 != rawSet.end());
+
+			node_a1++,
+			node_a2++,
+			calcNumber++;
+		} while (node_a2 != rawSet.end());
+
+		cycle++;
+	} while (((isImproved)));
+}
+
 int main() {
 
 	sf::RenderWindow window(sf::VideoMode(), "tsp", sf::Style::Fullscreen);
@@ -207,14 +285,14 @@ int main() {
 	auto sets = getConvexHull(initialSet);
 	nodeList convexHullSet = sets.first;
 	nodeList remainingSet = sets.second; // this is fine
-
-	// ERR: final set draws over hull set over and over again until the initialSet's size is reached
-	nodeList finalSet = calculateDeflate(convexHullSet, remainingSet);
+	nodeList deflatedSet = calculateDeflate(convexHullSet, remainingSet);
+	nodeList untangledSet = untangle(deflatedSet);
 
 	std::cout 	<< "init: " << initialSet.size() << "\n"
 				<< "hull: " << convexHullSet.size() << "\n"
 				<< "inner: " << remainingSet.size() << "\n"
-				<< "final: " << finalSet.size() << "\n";
+				<< "deflatedStrip: " << deflatedSet.size() << "\n"
+				<< "untangled: " << untangledSet.size() << "\n";
 
 	// DRAWING
 
@@ -244,17 +322,27 @@ int main() {
 		hullStrip.append(v);
 	}
 
-	sf::VertexArray finalStrip(sf::LineStrip);
+	sf::VertexArray deflatedStrip(sf::LineStrip);
 
-	std::cout << "drawing final line segment" << std::endl;
-	for (auto &point : finalSet) {
+	std::cout << "drawing deflatedStrip line segment" << std::endl;
+	for (auto &point : untangledSet) {
+		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
+		v.color = sf::Color::Green;
+		deflatedStrip.append(v);
+	}
+
+	sf::VertexArray untangledStrip(sf::LineStrip);
+
+	std::cout << "drawing untangled line segment" << std::endl;
+	for (auto &point : untangledSet) {
 		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
 		v.color = sf::Color::Red;
-		finalStrip.append(v);
+		untangledStrip.append(v);
 	}
 
 	window.draw(hullStrip);
-	window.draw(finalStrip);
+	window.draw(deflatedStrip);
+	window.draw(untangledStrip);
 
 	window.display();
 
