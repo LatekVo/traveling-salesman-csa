@@ -13,7 +13,7 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-unsigned int setSize = 120;
+unsigned int setSize = 200;
 unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 
 // --- --- ---
@@ -21,9 +21,13 @@ unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 // and i just want to test how accurate it really is. It seems to be O(n) time, which suggest it won't work
 // perfectly, as this problem is thought to be O(n^2) at best
 // --- --- ---
+// NOTES:
+// convexHull() + deflate() are certanly a great starting points, around 95% of the points allign with the optimal route.
+// 95% meaning, this initial set is already in the global-low valley, and just needs a bit more perfecting.
+// two-opt / untangle() besides fixing the oblivious (crossing) paths, it also optimizes a lot of other, less oblivious parts of the path.
 
-// TODO: leaking around 2 bytes each launch, not preferrable
-// (brought back to 1 byte, somehow)
+// TODO: two opt causes two error instances. #1 at .begin() -> .begin()++ iterator, and second at arbitriary points, even though it usually works fine.
+// it also breaks indexing of the std::list, causing it to wrongly calculate it's own size.
 
 // credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 // this is cross product, for determining relative rotation
@@ -218,55 +222,55 @@ nodeList untangle(nodeList rawSet) {
 	// basic general 2-opt algorithm, working for any two lines, not only the crossed ones
 
 	unsigned int calcNumber = 1;
-	unsigned int cycle = 1;
-	bool isImproved = false;
+	// unsigned int cycle = 1;
+	// bool isImproved = false;
+
+	calcNumber = 1;
+
+	auto node_a1 = rawSet.begin();
+	auto node_a2 = rawSet.begin();
+	node_a2++;
 
 	do {
-		isImproved = false;
-		calcNumber = 1;
-
-		auto node_a1 = rawSet.begin();
-		auto node_a2 = rawSet.begin();
-		node_a2++;
+		// std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
+		auto node_b1 = rawSet.begin();
+		auto node_b2 = rawSet.begin();
+		node_b2++;
 
 		do {
-			std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
-			auto node_b1 = rawSet.begin();
-			auto node_b2 = rawSet.begin();
+
+			float dist_a1_a2 = getDistance(*node_a1, *node_a2);
+			float dist_b1_b2 = getDistance(*node_b1, *node_b2);
+
+			float dist_a1_b1 = getDistance(*node_a1, *node_b1);
+			float dist_a2_b2 = getDistance(*node_a2, *node_b2);
+
+			// DBG ONLY
+			// std::cout << "point sets: " << dist_a1_a2 << " " << dist_b1_b2 << " " << dist_a1_b1 << " " << dist_a2_b2 << "\n";
+
+			// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
+
+			if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+
+				// the desirable fragment is essentially a sub list. std::list has a reversing option.
+				// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
+
+				auto b1_next = node_b1;
+				b1_next++;
+				std::reverse(node_a2, b1_next);
+
+			}
+
+			node_b1++,
 			node_b2++;
+		} while (node_b2 != rawSet.end());
 
-			do {
-				float dist_a1_a2 = getDistance(*node_a1, *node_a2);
-				float dist_b1_b2 = getDistance(*node_b1, *node_b2);
+		node_a1++,
+		node_a2++,
+		calcNumber++;
+	} while (node_a2 != rawSet.end());
 
-				float dist_a1_b1 = getDistance(*node_a1, *node_b1);
-				float dist_a2_b2 = getDistance(*node_a2, *node_b2);
-
-				// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
-
-				if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
-
-					// the desirable fragment is essentially a sub list. std::list has a reversing option.
-					// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
-
-					auto b1_next = node_b1;
-					b1_next++;
-					std::reverse(node_a2, b1_next);
-
-					isImproved = true;
-				}
-
-				node_b1++,
-				node_b2++;
-			} while (node_b2 != rawSet.end());
-
-			node_a1++,
-			node_a2++,
-			calcNumber++;
-		} while (node_a2 != rawSet.end());
-
-		cycle++;
-	} while (((isImproved)));
+	return rawSet;
 }
 
 int main() {
@@ -325,7 +329,7 @@ int main() {
 	sf::VertexArray deflatedStrip(sf::LineStrip);
 
 	std::cout << "drawing deflatedStrip line segment" << std::endl;
-	for (auto &point : untangledSet) {
+	for (auto &point : deflatedSet) {
 		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
 		v.color = sf::Color::Green;
 		deflatedStrip.append(v);
