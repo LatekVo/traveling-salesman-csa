@@ -13,7 +13,7 @@
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
-unsigned int setSize = 200;
+unsigned int setSize = 400;
 unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
 
 // --- --- ---
@@ -36,22 +36,9 @@ float getRotation(node &anchorPoint, node &checkedPoint, node &referenceVector)
 	// r < 0 = counter-clockwise
 	// r = 0 = collinear
 	// r > 0 = clockwise
-	// highet values at 90deg,
+	// highest values at 90deg,
 	return (checkedPoint.second - anchorPoint.second) * (referenceVector.first - checkedPoint.first) -
 		   (checkedPoint.first - anchorPoint.first) * (referenceVector.second - checkedPoint.second);
-}
-
-nodeList loadFromFile(std::string &filename) {
-	nodeList resultSet;
-	std::ifstream file;
-	file.open(filename);
-	std::string buffer;
-	std::getline(file, buffer);
-
-	
-
-
-	return resultSet;
 }
 
 template<typename rngT>
@@ -68,6 +55,28 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 	}
 
 	resultSet.unique();
+
+	return resultSet;
+}
+
+float getDistance(node &a, node &b) {
+	// offset to 0,0
+	float x = b.first - a.first;
+	float y = b.second - a.second;
+
+	// trig vector
+	return std::sqrt(x*x + y*y);
+}
+
+nodeList loadFromFile(std::string &filename) {
+	nodeList resultSet;
+	std::ifstream file;
+	file.open(filename);
+	std::string buffer;
+	std::getline(file, buffer);
+
+
+
 
 	return resultSet;
 }
@@ -94,7 +103,7 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 	for (auto &item : nodeSet) {
 
 		// topmost node
-		if (item.second > leftmost.second) topmost = item;
+		if (item.second > topmost.second && item != leftmost) topmost = item;
 
 		std::cout << item.second << "\n";
 
@@ -134,15 +143,6 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 	return {hullSet, interiorSet};
 }
 
-float getDistance(node &a, node &b) {
-	// offset to 0,0
-	float x = b.first - a.first;
-	float y = b.second - a.second;
-
-	// trig vector
-	return std::sqrt(x*x + y*y);
-}
-
 // beggining with an outer loop, for each iteration find the point that will influence lengthList the least
 nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	std::cout << "starting to deflate\n";
@@ -162,10 +162,7 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	// TODO: implement caching system for getDistance()
 	// tip: maybe group floats using std::floor to use std::map as storage?
 
-	unsigned int calcNumber = 1;
-	do {
-		std::cout << "stage 1, computed #: " << calcNumber << " / " << setSize << "\n";
-		calcNumber++;
+	while (!remainingSet.empty()) {
 		auto a_it = hullSet.begin();
 		auto b_it = hullSet.begin();
 		b_it++;
@@ -201,6 +198,8 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 			a_it++, b_it++, position++;
 		}
 
+		std::cout << hullSet.size() << " c\n";
+
 		// summary: find the smallest distance difference, new hull now includes that point, repeat
 
 		auto insertIter = hullSet.begin();
@@ -210,7 +209,7 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 		hullSet.insert(insertIter, topDist_node);
  		remainingSet.remove(topDist_node);
 
-	} while (!remainingSet.empty());
+	}
 
 	return hullSet;
 }
@@ -218,58 +217,91 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 // another n^2 operation
 // switch every pair of vectors that's crossing eachother
 nodeList untangle(nodeList rawSet) {
+	std::cout << "starting to untangle\n";
 
 	// basic general 2-opt algorithm, working for any two lines, not only the crossed ones
 
 	unsigned int calcNumber = 1;
-	// unsigned int cycle = 1;
-	// bool isImproved = false;
+	bool repeat = true;
 
-	calcNumber = 1;
+	while (repeat) {
+		repeat = false;
 
-	auto node_a1 = rawSet.begin();
-	auto node_a2 = rawSet.begin();
-	node_a2++;
+		calcNumber = 1;
 
-	do {
-		// std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
-		auto node_b1 = rawSet.begin();
-		auto node_b2 = rawSet.begin();
-		node_b2++;
+		auto node_a1 = rawSet.begin();
+		auto node_a2 = rawSet.begin();
+		node_a2++;
 
-		do {
+		// debug only
+		int iter_a = 0, iter_b = 0;
+		int last_iter_a = 0, last_iter_b = 0;
+		// still cannot loop ffs
 
-			float dist_a1_a2 = getDistance(*node_a1, *node_a2);
-			float dist_b1_b2 = getDistance(*node_b1, *node_b2);
+		iter_a = 0;
 
-			float dist_a1_b1 = getDistance(*node_a1, *node_b1);
-			float dist_a2_b2 = getDistance(*node_a2, *node_b2);
+		while (node_a2 != rawSet.end()) {
+			// std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
+			auto node_b1 = rawSet.begin();
+			auto node_b2 = rawSet.begin();
+			node_b2++;
 
-			// DBG ONLY
-			// std::cout << "point sets: " << dist_a1_a2 << " " << dist_b1_b2 << " " << dist_a1_b1 << " " << dist_a2_b2 << "\n";
+			iter_b = 0;
 
-			// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
+			while (node_b2 != rawSet.end()) {
 
-			if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+				float dist_a1_a2, dist_b1_b2, dist_a1_b1, dist_a2_b2;
 
-				// the desirable fragment is essentially a sub list. std::list has a reversing option.
-				// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
+				// these are some cases which cause exceptions
+				if (iter_a > iter_b ||
+					node_a1 == node_a2 ||
+					node_b1 == node_b2 ||
+					node_a1 == node_b1 ||
+					node_a2 == node_b2) goto untangleSkip;
 
-				auto b1_next = node_b1;
-				b1_next++;
-				std::reverse(node_a2, b1_next);
+				dist_a1_a2 = getDistance(*node_a1, *node_a2);
+				dist_b1_b2 = getDistance(*node_b1, *node_b2);
 
+				dist_a1_b1 = getDistance(*node_a1, *node_b1);
+				dist_a2_b2 = getDistance(*node_a2, *node_b2);
+
+				// DBG ONLY
+				// std::cout << "point sets: " << dist_a1_a2 << " " << dist_b1_b2 << " " << dist_a1_b1 << " " << dist_a2_b2 << "\n";
+
+				// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
+
+				// quickfix: iter != iter, shouldn't have to do this
+				if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+
+					// the desirable fragment is essentially a sub list. std::list has a reversing option.
+					// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
+
+					auto b1_next = node_b1;
+					b1_next++;
+					std::reverse(node_a2, b1_next);
+
+					std::cout << rawSet.size() << " fix @ " << iter_a << " " << iter_b << "\n";
+
+					repeat = true;
+				}
+
+				untangleSkip:
+
+				node_b1++,
+				node_b2++,
+				last_iter_b = iter_b,
+				iter_b++;
 			}
 
-			node_b1++,
-			node_b2++;
-		} while (node_b2 != rawSet.end());
 
-		node_a1++,
-		node_a2++,
-		calcNumber++;
-	} while (node_a2 != rawSet.end());
+			node_a1++,
+			node_a2++,
+			last_iter_a = iter_a,
+			iter_a++,
+			calcNumber++;
+		}
 
+	}
 	return rawSet;
 }
 
@@ -285,6 +317,9 @@ int main() {
 	std::default_random_engine rng(std::chrono::system_clock::now().time_since_epoch().count());
 
 	nodeList initialSet = getRandomSet(setSize, min, max, rng);
+
+	// IMPORTANT NOTE: untangle() stopped working, deflate was causing errors i was conviced were caused by untangledSet
+	// ^^^ initially fixed the deflate() errors (probably), untangle() getting stuck persists
 
 	auto sets = getConvexHull(initialSet);
 	nodeList convexHullSet = sets.first;
@@ -342,6 +377,7 @@ int main() {
 		auto v = sf::Vertex(sf::Vector2f(point.first, point.second));
 		v.color = sf::Color::Red;
 		untangledStrip.append(v);
+
 	}
 
 	window.draw(hullStrip);
