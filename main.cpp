@@ -9,25 +9,31 @@
 #include <random>
 #include <cmath>
 #include <chrono>
+#include <sstream>
 
 typedef std::pair<float, float> node;
 typedef std::list<node> nodeList;
 
 unsigned int setSize = 400;
 unsigned int m_size_x = 512, m_size_y = 512; // defaults, changed later
+float optimalLength = 0;
 
 // --- --- ---
-// im even attempting this project at the first place, because this algorithm worked every time on paper,
+// the reason im even attempting this project at the first place, is because this algorithm worked every time on paper,
 // and i just want to test how accurate it really is. It seems to be O(n) time, which suggest it won't work
 // perfectly, as this problem is thought to be O(n^2) at best
+// UPDATE AFTER FINISHING ^^^
+// while
 // --- --- ---
 // NOTES:
-// convexHull() + deflate() are certanly a great starting points, around 95% of the points allign with the optimal route.
+// convexHull() + deflate() are certainly a great starting points, around 95% of the points allign with the optimal route.
 // 95% meaning, this initial set is already in the global-low valley, and just needs a bit more perfecting.
 // two-opt / untangle() besides fixing the oblivious (crossing) paths, it also optimizes a lot of other, less oblivious parts of the path.
-
-// TODO: two opt causes two error instances. #1 at .begin() -> .begin()++ iterator, and second at arbitriary points, even though it usually works fine.
-// it also breaks indexing of the std::list, causing it to wrongly calculate it's own size.
+// --- --- ---
+// POTENTIAL GOALS:
+// biggest pain right now is not being able to untangle() while changing up (rotating) 3 connections instead of 2.
+// while it's easily programmable, complexity would jump to n^3 which is way too much - much more than I could afford.
+// currently, how this could be done, is by iterating by [every node pair] -> [every node] -> [every node pair].
 
 // credit: https://iq.opengenus.org/gift-wrap-jarvis-march-algorithm-convex-hull/
 // this is cross product, for determining relative rotation
@@ -47,11 +53,11 @@ nodeList getRandomSet(int size, int min, int max, rngT &rng) {
 
 	for (int i = 0; i < size; i++) {
 		resultSet.push_back(
-					{
-						std::abs((float) rng()) / rng.max() * (max - min * 2) + min,
-						std::abs((float) rng()) / rng.max() * (max - min * 2) + min
-					}
-				);
+			{
+				std::abs((float) rng()) / rng.max() * (max - min * 2) + min,
+				std::abs((float) rng()) / rng.max() * (max - min * 2) + min
+			}
+		);
 	}
 
 	resultSet.unique();
@@ -68,16 +74,120 @@ float getDistance(node &a, node &b) {
 	return std::sqrt(x*x + y*y);
 }
 
-nodeList loadFromFile(std::string &filename) {
+float sumPath(nodeList &nodePath) {
+	auto node_a = nodePath.begin();
+	auto node_b = nodePath.begin();
+	node_b++;
+
+	float pathTotal = 0;
+
+	while (node_b != nodePath.end()) {
+
+		pathTotal += getDistance(*node_a, *node_b);
+
+		node_a++,
+		node_b++;
+	}
+
+	return pathTotal;
+}
+
+union int_or_float {
+	int integer;
+	float decimal;
+};
+
+// TODO: probably should rewrite this function to contain all of the keywords in some sort of a string - function table.
+nodeList loadFromFile(char *filename) {
+
+	std::cout << "running file loading on file: " << filename << "\n";
+
 	nodeList resultSet;
 	std::ifstream file;
+
 	file.open(filename);
+	std::cout << (file.good() ? "file found" : "file not found") << '\n';
+
 	std::string buffer;
-	std::getline(file, buffer);
 
+	unsigned int totalSize = 0;
+	std::string commentBuffer = "COMMENTS:\n";
 
+	while(std::getline(file, buffer)) {
+		std::cout << "dbg\n";
+		std::stringstream bufferSStream(buffer);
+		std::string option, value;
 
+		bufferSStream >> option;
 
+		// --- sorting section ---
+
+		// parsing through all of the coords
+		if (option == "NODE_COORD_SECTION") {
+			buffer.clear();
+			while(std::getline(file, buffer)) {
+
+				// there is some rubbish attached to "EOF" that i prefer to get rid of this way
+				std::stringstream quickfix;
+				std::string str_quickfix;
+
+				quickfix.str(buffer);
+				quickfix >> str_quickfix;
+
+				if (str_quickfix == "EOF")
+					return resultSet;
+				std::cout << "still here\n";
+
+				std::string index, x_pointCoord, y_pointCoord;
+
+				bufferSStream.clear();
+				bufferSStream.str(buffer);
+				bufferSStream >> index >> x_pointCoord >> y_pointCoord;
+				buffer.clear();
+
+				auto toFloat = [](std::string &s) {
+					if (s.find('.'))
+						return std::stof(s);
+					else
+						return (float) std::stoi(s);
+				};
+
+				// todo: read DIMENSIONS field
+				totalSize = std::stoi(index);
+
+				resultSet.push_back({toFloat(x_pointCoord), toFloat(y_pointCoord)});
+
+				std::cout << "loading... " << index << '/' << totalSize << " '" << x_pointCoord << " " << y_pointCoord << "'\n";
+			}
+		} else {
+			bufferSStream >> buffer;
+			value = bufferSStream.str();
+
+			if (option == "COMMENT") {
+				commentBuffer += value + '\n';
+			}
+			/*
+			if (option == "DIMENSION") {
+				totalSize = std::stoi(value);
+			}
+			*/
+		}
+
+		std::cout << "buffer: " << buffer << " option: " << option << " value: " << value << '\n';
+
+		buffer.clear();
+		bufferSStream.clear();
+	}
+
+	totalSize = resultSet.size();
+
+	std::cout << commentBuffer
+			  << "SIZE: " << totalSize << '\n';
+
+	setSize = totalSize;
+
+	// don't want to risk errors, and i saw some duplicated points in these datasets.
+	resultSet.unique();
 	return resultSet;
 }
 
@@ -305,21 +415,32 @@ nodeList untangle(nodeList rawSet) {
 	return rawSet;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
 
 	sf::RenderWindow window(sf::VideoMode(), "tsp", sf::Style::Fullscreen);
 	m_size_x = window.getSize().x;
 	m_size_y = window.getSize().y;
 
-	int min = m_size_x < m_size_y ? std::floor((float)m_size_x * 0.05) : std::floor((float)m_size_y * 0.05);
-	int max = m_size_x < m_size_y ? std::ceil((float)m_size_x * 0.95) : std::ceil((float)m_size_y * 0.95);
+	auto getInitSet = [&](){
+		if (argc == 1) {
 
-	std::default_random_engine rng(std::chrono::system_clock::now().time_since_epoch().count());
+			int min = m_size_x < m_size_y ? std::floor((float) m_size_x * 0.05) : std::floor((float) m_size_y * 0.05);
+			int max = m_size_x < m_size_y ? std::ceil((float) m_size_x * 0.95) : std::ceil((float) m_size_y * 0.95);
 
-	nodeList initialSet = getRandomSet(setSize, min, max, rng);
+			std::default_random_engine rng(std::chrono::system_clock::now().time_since_epoch().count());
 
+			return getRandomSet(setSize, min, max, rng);
+
+		} else {
+
+			return loadFromFile(argv[1]);
+
+		}
+	};
 	// IMPORTANT NOTE: untangle() stopped working, deflate was causing errors i was conviced were caused by untangledSet
 	// ^^^ initially fixed the deflate() errors (probably), untangle() getting stuck persists
+
+	nodeList initialSet = getInitSet();
 
 	auto sets = getConvexHull(initialSet);
 	nodeList convexHullSet = sets.first;
@@ -379,6 +500,11 @@ int main() {
 		untangledStrip.append(v);
 
 	}
+
+
+	std::cout << "deflate path length: " << sumPath(deflatedSet) << "\n";
+	std::cout << "untangle path length: " << sumPath(untangledSet) << "\n";
+	std::cout << "optimal path length: " << (optimalLength == 0 ? "N/A" : std::to_string(optimalLength)) << "\n";
 
 	window.draw(hullStrip);
 	window.draw(deflatedStrip);
