@@ -417,6 +417,7 @@ nodeList untangle(nodeList rawSet) {
 
 int main(int argc, char* argv[]) {
 
+	bool usingFile = false;
 	sf::RenderWindow window(sf::VideoMode(), "tsp", sf::Style::Fullscreen);
 	m_size_x = window.getSize().x;
 	m_size_y = window.getSize().y;
@@ -433,6 +434,7 @@ int main(int argc, char* argv[]) {
 
 		} else {
 
+			usingFile = true;
 			return loadFromFile(argv[1]);
 
 		}
@@ -464,16 +466,11 @@ int main(int argc, char* argv[]) {
 
 
 	sf::CircleShape ptShape;
-	ptShape.setRadius(3);
 	ptShape.setFillColor(sf::Color::Black);
 
-	std::cout << "drawing points" << std::endl;
-	for (auto &point : initialSet) {
-		ptShape.setPosition(point.first - ptShape.getRadius(), point.second - ptShape.getRadius());
-		window.draw(ptShape);
-	}
-
 	sf::VertexArray hullStrip(sf::LineStrip);
+	sf::VertexArray deflatedStrip(sf::LineStrip);
+	sf::VertexArray untangledStrip(sf::LineStrip);
 
 	std::cout << "drawing hull line segment" << std::endl;
 	for (auto &point : convexHullSet) {
@@ -482,7 +479,6 @@ int main(int argc, char* argv[]) {
 		hullStrip.append(v);
 	}
 
-	sf::VertexArray deflatedStrip(sf::LineStrip);
 
 	std::cout << "drawing deflatedStrip line segment" << std::endl;
 	for (auto &point : deflatedSet) {
@@ -491,7 +487,6 @@ int main(int argc, char* argv[]) {
 		deflatedStrip.append(v);
 	}
 
-	sf::VertexArray untangledStrip(sf::LineStrip);
 
 	std::cout << "drawing untangled line segment" << std::endl;
 	for (auto &point : untangledSet) {
@@ -502,22 +497,23 @@ int main(int argc, char* argv[]) {
 	}
 
 
+
 	std::cout << "deflate path length: " << sumPath(deflatedSet) << "\n";
 	std::cout << "untangle path length: " << sumPath(untangledSet) << "\n";
 	std::cout << "optimal path length: " << (optimalLength == 0 ? "N/A" : std::to_string(optimalLength)) << "\n";
 
-	window.draw(hullStrip);
-	window.draw(deflatedStrip);
-	window.draw(untangledStrip);
-
-	window.display();
-
 	sf::Clock g_delta;
 	float g_currentFrameAdjustment = 0.f;
 	sf::Vector2f position {0, 0};
+	float currentZoom = 1.f;
 
 	while(window.isOpen()) {
-		//window.clear(sf::Color::White);
+		float zoomChange = 1.f;
+
+		g_currentFrameAdjustment = g_delta.getElapsedTime().asSeconds();
+		g_delta.restart();
+
+		window.clear(sf::Color::White);
 
 		// this has to be checked more often, in case exec time gets insane
 		sf::Event event {};
@@ -531,10 +527,23 @@ int main(int argc, char* argv[]) {
 						window.close();
 					}
 					break;
+				case sf::Event::MouseWheelScrolled:
+					if (event.mouseWheelScroll.delta != 0)
+						zoomChange -= event.mouseWheelScroll.delta * 0.10;
 			}
 		}
 
-		float mov = 2 * g_currentFrameAdjustment * 1000;
+		ptShape.setRadius(3 * currentZoom);
+		for (auto &point : initialSet) {
+			ptShape.setPosition(point.first - ptShape.getRadius(), point.second - ptShape.getRadius());
+			window.draw(ptShape);
+		}
+
+		window.draw(hullStrip);
+		window.draw(deflatedStrip);
+		window.draw(untangledStrip);
+
+		float mov = 2 * g_currentFrameAdjustment * 1000 * currentZoom;
 		float xMov = 0;
 		float yMov = 0;
 
@@ -559,8 +568,14 @@ int main(int argc, char* argv[]) {
 		position.x += xMov;
 		position.y += yMov;
 
-		camera.setCenter(position);
+		camera.zoom(zoomChange);
+		currentZoom *= zoomChange;
+		zoomChange = 1;
 
+		camera.setCenter(position);
+		if(usingFile) {
+			window.setView(camera);
+		}
 		window.display();
 
 	}
