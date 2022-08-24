@@ -259,6 +259,9 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	// 0 -> 1 has index 0
 	std::list<float> lengthList; // list as we need to insert values
 
+	if (hullSet.size() < 2)
+		return hullSet;
+
 	auto it = hullSet.begin();
 	auto last_it = it;
 	it++;
@@ -326,13 +329,19 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 
 // another n^2 operation
 // switch every pair of vectors that's crossing eachother
+// todo: some rare cases where this doesn't react to simple problems.
+// todo example: xqf131 rightmost segment is an oblivious simplification falling under this functions' scope
 nodeList untangle(nodeList rawSet) {
 	std::cout << "starting to untangle\n";
+
+	if (rawSet.size() < 2)
+		return rawSet;
 
 	// basic general 2-opt algorithm, working for any two lines, not only the crossed ones
 
 	unsigned int calcNumber = 1;
 	bool repeat = true;
+	bool reverse = false; // experimental variable to check asymmetry errors
 
 	while (repeat) {
 		repeat = false;
@@ -351,10 +360,9 @@ nodeList untangle(nodeList rawSet) {
 		iter_a = 0;
 
 		while (node_a2 != rawSet.end()) {
-			// std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
-			auto node_b1 = rawSet.begin();
-			auto node_b2 = rawSet.begin();
-			node_b2++;
+
+			auto node_b1 = node_a1;
+			auto node_b2 = node_a2;
 
 			iter_b = 0;
 
@@ -363,24 +371,22 @@ nodeList untangle(nodeList rawSet) {
 				float dist_a1_a2, dist_b1_b2, dist_a1_b1, dist_a2_b2;
 
 				// these are some cases which cause exceptions
-				if (iter_a > iter_b ||
-					node_a1 == node_a2 ||
+				if (node_a1 == node_a2 ||
 					node_b1 == node_b2 ||
 					node_a1 == node_b1 ||
 					node_a2 == node_b2) goto untangleSkip;
 
-				dist_a1_a2 = getDistance(*node_a1, *node_a2);
-				dist_b1_b2 = getDistance(*node_b1, *node_b2);
+				dist_a1_a2 = getDistance(*node_a1, *node_a2); // a1
+				dist_b1_b2 = getDistance(*node_b1, *node_b2); // b1
 
-				dist_a1_b1 = getDistance(*node_a1, *node_b1);
-				dist_a2_b2 = getDistance(*node_a2, *node_b2);
-
-				// DBG ONLY
-				// std::cout << "point sets: " << dist_a1_a2 << " " << dist_b1_b2 << " " << dist_a1_b1 << " " << dist_a2_b2 << "\n";
+				dist_a1_b1 = getDistance(*node_a1, *node_b1); // a2
+				dist_a2_b2 = getDistance(*node_a2, *node_b2); // b2
 
 				// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
 
-				// quickfix: iter != iter, shouldn't have to do this
+				// original: if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+				// works the same!?: if ((dist_a1_b1 - dist_b1_b2) < (dist_a1_a2 - dist_a2_b2)) {
+
 				if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
 
 					// the desirable fragment is essentially a sub list. std::list has a reversing option.
@@ -409,6 +415,13 @@ nodeList untangle(nodeList rawSet) {
 			last_iter_a = iter_a,
 			iter_a++,
 			calcNumber++;
+		}
+
+		// error testing - dbg only
+		if (!repeat && !reverse) {
+			reverse = true;
+			repeat = true;
+			rawSet.reverse();
 		}
 
 	}
@@ -506,6 +519,8 @@ int main(int argc, char* argv[]) {
 	float g_currentFrameAdjustment = 0.f;
 	sf::Vector2f position {0, 0};
 	float currentZoom = 1.f;
+
+	// int x_flip = 1, y_flip = 1;
 
 	while(window.isOpen()) {
 		float zoomChange = 1.f;
