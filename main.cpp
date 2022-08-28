@@ -206,16 +206,12 @@ std::pair<nodeList, nodeList> getConvexHull(nodeList &nodeSet) {
 		// leftmost node
 		if (item.first < leftmost.first) leftmost = item;
 
-		std::cout << item.first << "\n";
-
 	}
 	std::cout << "probing topmost point\n";
 	for (auto &item : nodeSet) {
 
 		// topmost node
 		if (item.second > topmost.second && item != leftmost) topmost = item;
-
-		std::cout << item.second << "\n";
 
 	}
 
@@ -273,26 +269,24 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 	// tip: maybe group floats using std::floor to use std::map as storage?
 
 	while (!remainingSet.empty()) {
-		auto a_it = hullSet.begin();
-		auto b_it = hullSet.begin();
-		b_it++;
-
-		// this has an insane time complexity. collapses * edge_points * inner_points * 2;
-		// At 50k points... that'll probably run for a couple of hours, or days
 
 		int topDist_pos = 0;
 		float topDist_val = std::numeric_limits<float>::max();
 		auto topDist_node = remainingSet.front();
 
-		// THIS IS A POINTER TO REMAININGSET, WHY WOULD I USE IT IN HULLSET!???
-		// auto topDist_it = remainingSet.begin();
+		auto a_it = hullSet.begin();
+		auto b_it = a_it;
+		b_it++;
+
+		// this has an insane time complexity. collapses * edge_points * inner_points * 2;
+		// At 50k points... that'll probably run for a couple of hours, or days
 
 		// for every hull line ...
 		int position = 1;
 		while (b_it != hullSet.end()) {
 
 			// ... check every unused point
-			for (auto &c_it : remainingSet) {
+			for (auto &c_it: remainingSet) {
 
 				float check = getDistance(*a_it, c_it) + getDistance(*b_it, c_it) - getDistance(*a_it, *b_it);
 
@@ -304,24 +298,25 @@ nodeList calculateDeflate(nodeList hullSet, nodeList remainingSet) {
 					topDist_pos = position;
 				}
 
+				// PREVIOUS INSERTION POSITION.
+
 			}
 			a_it++, b_it++, position++;
 		}
 
-		std::cout << hullSet.size() << " c\n";
-
-		// summary: find the smallest distance difference, new hull now includes that point, repeat
-
+		// moved inserting here, this will increase the execution time, but will increase the accuracy.
+		// after finding the smallest distance difference, apply it.
 		auto insertIter = hullSet.begin();
 		for (auto i = 0; i < topDist_pos; i++)
 			insertIter++;
 
 		hullSet.insert(insertIter, topDist_node);
- 		remainingSet.remove(topDist_node);
+		remainingSet.remove(topDist_node);
 
 	}
 
 	return hullSet;
+
 }
 
 // another n^2 operation
@@ -340,48 +335,41 @@ nodeList untangle(nodeList rawSet) {
 		calcNumber = 1;
 
 		auto node_a1 = rawSet.begin();
-		auto node_a2 = rawSet.begin();
+		auto node_a2 = node_a1;
 		node_a2++;
 
 		// debug only
-		int iter_a = 0, iter_b = 0;
-		int last_iter_a = 0, last_iter_b = 0;
-		// still cannot loop ffs
+		int iterCounter_a = 0, iterCounter_b = 0;
 
-		iter_a = 0;
+		iterCounter_a = 0;
 
 		while (node_a2 != rawSet.end()) {
 			// std::cout << "stage 2, cycle #: " << cycle << ", computed #: " << calcNumber << " / " << setSize << "\n";
-			auto node_b1 = rawSet.begin();
-			auto node_b2 = rawSet.begin();
+			auto node_b1 = node_a1;
+			node_b1++;
+			auto node_b2 = node_b1;
 			node_b2++;
 
-			iter_b = 0;
+			iterCounter_b = 0;
 
 			while (node_b2 != rawSet.end()) {
 
-				float dist_a1_a2, dist_b1_b2, dist_a1_b1, dist_a2_b2;
+				// float dist_a1_a2, dist_b1_b2, dist_a1_b1, dist_a2_b2;
+				float distPair_a, distPair_b;
 
-				// these are some cases which cause exceptions
-				if (iter_a > iter_b ||
-					node_a1 == node_a2 ||
-					node_b1 == node_b2 ||
-					node_a1 == node_b1 ||
-					node_a2 == node_b2) goto untangleSkip;
+				// multiplying sub-distances instead of getting the total distance actually provides better results lol
+				// there is an error where around half of inefficiencies are not caught, even though they should be
 
-				dist_a1_a2 = getDistance(*node_a1, *node_a2);
-				dist_b1_b2 = getDistance(*node_b1, *node_b2);
-
-				dist_a1_b1 = getDistance(*node_a1, *node_b1);
-				dist_a2_b2 = getDistance(*node_a2, *node_b2);
-
+				distPair_a = getDistance(*node_a1, *node_a2) + getDistance(*node_b1, *node_b2);
+				distPair_b = getDistance(*node_a1, *node_b1) + getDistance(*node_a2, *node_b2);
+				std::cout << distPair_a << " " << distPair_b << "\n";
 				// DBG ONLY
 				// std::cout << "point sets: " << dist_a1_a2 << " " << dist_b1_b2 << " " << dist_a1_b1 << " " << dist_a2_b2 << "\n";
 
 				// for now not bothering with only doing one swap per cycle, one cycle with all swaps sequentially should do just fine.
 
 				// quickfix: iter != iter, shouldn't have to do this
-				if ((dist_a1_b1 + dist_a2_b2) < (dist_a1_a2 + dist_b1_b2)) {
+				if (distPair_b < distPair_a) {
 
 					// the desirable fragment is essentially a sub list. std::list has a reversing option.
 					// we should be able to reverse sequence from pointer A to pointer B, in this case, a2 .. b1
@@ -390,7 +378,7 @@ nodeList untangle(nodeList rawSet) {
 					b1_next++;
 					std::reverse(node_a2, b1_next);
 
-					std::cout << rawSet.size() << " fix @ " << iter_a << " " << iter_b << "\n";
+					std::cout << rawSet.size() << " fix @ " << iterCounter_a << " " << iterCounter_b << "\n";
 
 					repeat = true;
 				}
@@ -399,15 +387,13 @@ nodeList untangle(nodeList rawSet) {
 
 				node_b1++,
 				node_b2++,
-				last_iter_b = iter_b,
-				iter_b++;
+				iterCounter_b++;
 			}
 
 
 			node_a1++,
 			node_a2++,
-			last_iter_a = iter_a,
-			iter_a++,
+			iterCounter_a++,
 			calcNumber++;
 		}
 
@@ -495,8 +481,6 @@ int main(int argc, char* argv[]) {
 		untangledStrip.append(v);
 
 	}
-
-
 
 	std::cout << "deflate path length: " << sumPath(deflatedSet) << "\n";
 	std::cout << "untangle path length: " << sumPath(untangledSet) << "\n";
